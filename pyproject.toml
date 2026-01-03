@@ -1,0 +1,50 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bmcforge"
+version = "0.1.0"
+description = "A local-first CLI tool for video creators to manage content pipelines, organize assets, and generate ideas."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [
+    { name = "BMCForge" }
+]
+keywords = ["cli", "video", "content", "creator", "pipeline", "assets"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Multimedia :: Video",
+]
+dependencies = [
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "httpx>=0.25.0",
+    "pendulum>=3.0.0",
+    "tomli-w>=1.0.0",
+]
+
+[project.optional-dependencies]
+publishing = [
+    "google-api-python-client>=2.0.0",
+    "google-auth-oauthlib>=1.0.0",
+]
+tiktok = [
+    "playwright>=1.40.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[project.scripts]
+bmc = "bmcforge.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bmcforge"]
