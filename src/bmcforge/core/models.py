@@ -54,6 +54,17 @@ class Platform(str, Enum):
     INSTAGRAM = "instagram"
 
 
+class PublicationStatus(str, Enum):
+    """Status of a publication."""
+
+    PENDING = "pending"
+    UPLOADING = "uploading"
+    PROCESSING = "processing"
+    PUBLISHED = "published"
+    SCHEDULED = "scheduled"
+    FAILED = "failed"
+
+
 @dataclass
 class Content:
     """A content item in the pipeline."""
@@ -151,3 +162,35 @@ class Idea:
     rating: Optional[int] = None
     converted_to_content_id: Optional[int] = None
     created_at: Optional[datetime] = None
+
+
+@dataclass
+class Publication:
+    """A publication record for content on a platform."""
+
+    id: Optional[int] = None
+    content_id: Optional[int] = None
+    platform: Platform = Platform.YOUTUBE
+    post_id: Optional[str] = None
+    post_url: Optional[str] = None
+    status: PublicationStatus = PublicationStatus.PENDING
+    scheduled_for: Optional[datetime] = None
+    published_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    @classmethod
+    def from_row(cls, row) -> "Publication":
+        """Create Publication from a database row."""
+        return cls(
+            id=row["id"],
+            content_id=row["content_id"],
+            platform=Platform(row["platform"]) if row["platform"] else Platform.YOUTUBE,
+            post_id=row["post_id"],
+            post_url=row["post_url"],
+            status=PublicationStatus(row["status"]) if row["status"] else PublicationStatus.PENDING,
+            scheduled_for=datetime.fromisoformat(row["scheduled_for"]) if row["scheduled_for"] else None,
+            published_at=datetime.fromisoformat(row["published_at"]) if row["published_at"] else None,
+            error_message=row["error_message"],
+            created_at=datetime.fromisoformat(row["created_at"]) if row["created_at"] else None,
+        )

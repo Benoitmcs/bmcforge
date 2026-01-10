@@ -12,6 +12,7 @@ from . import assets as assets_cmd
 from . import scripts as scripts_cmd
 from . import shots as shots_cmd
 from . import panic as panic_cmd
+from . import publish as publish_cmd
 
 app = typer.Typer(
     name="bmc",
@@ -37,6 +38,7 @@ app.add_typer(scripts_cmd.app, name="scripts", help="Manage scripts")
 app.add_typer(shots_cmd.app, name="shots", help="Manage shot lists")
 app.add_typer(config_cmd.app, name="config", help="Manage configuration")
 app.add_typer(panic_cmd.app, name="panic", help="Quick video idea generation")
+app.add_typer(publish_cmd.app, name="publish", help="Publish content to platforms")
 
 
 @app.command()

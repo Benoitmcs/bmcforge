@@ -24,6 +24,16 @@ DEFAULT_CONFIG = {
         "openrouter_key": "",
         "llm_model": "tngtech/deepseek-r1t2-chimera:free",
     },
+    "youtube": {
+        "credentials_path": "~/.bmcforge/youtube_client_secrets.json",
+        "default_privacy": "private",
+        "default_category": "people_blogs",
+        "notify_subscribers": True,
+    },
+    "instagram": {
+        "access_token": "",
+        "user_id": "",
+    },
     "display": {
         "date_format": "%Y-%m-%d",
         "show_file_sizes": True,
