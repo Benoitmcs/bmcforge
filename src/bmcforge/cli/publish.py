@@ -23,6 +23,9 @@ PLATFORM_DEPS = {
         "google-api-python-client>=2.0.0",
         "google-auth-oauthlib>=1.0.0",
     ],
+    "instagram": [
+        "httpx>=0.25.0",
+    ],
     "tiktok": [
         "playwright>=1.40.0",
     ],
@@ -48,6 +51,26 @@ def _get_youtube_publisher():
         credentials_path = Path(credentials_path).expanduser()
 
     return YouTubePublisher(credentials_path)
+
+
+def _check_instagram_available() -> bool:
+    """Check if Instagram dependencies are installed."""
+    try:
+        from ..services.publishers.instagram import check_instagram_available
+
+        return check_instagram_available()
+    except ImportError:
+        return False
+
+
+def _get_instagram_publisher():
+    """Get an Instagram publisher instance."""
+    from ..services.publishers.instagram import InstagramPublisher
+
+    access_token = get_config_value("instagram.access_token")
+    user_id = get_config_value("instagram.user_id")
+
+    return InstagramPublisher(access_token=access_token, user_id=user_id)
 
 
 @app.command()
@@ -166,15 +189,85 @@ def auth(
             raise typer.Exit(1)
 
     elif plat == Platform.INSTAGRAM:
-        console.print("\n[bold]Instagram Setup Instructions:[/bold]\n")
-        console.print("Instagram publishing requires a Business or Creator account")
-        console.print("linked to a Facebook Page.\n")
-        console.print("1. Set up a Meta Developer account at https://developers.facebook.com")
-        console.print("2. Create an app and add the Instagram Graph API")
-        console.print("3. Get your access token and Instagram User ID")
-        console.print("4. Run: bmc config set instagram.access_token YOUR_TOKEN")
-        console.print("5. Run: bmc config set instagram.user_id YOUR_USER_ID")
-        print_warning("Instagram publishing is not yet fully implemented.")
+        if not _check_instagram_available():
+            print_error(
+                "Instagram publishing requires httpx.\n"
+                "Run: bmc publish setup instagram"
+            )
+            raise typer.Exit(1)
+
+        # Check if credentials are configured
+        access_token = get_config_value("instagram.access_token")
+        user_id = get_config_value("instagram.user_id")
+
+        if not access_token or not user_id:
+            console.print("\n[bold]Instagram Content Publishing Setup[/bold]\n")
+            console.print("[yellow]Important:[/yellow] You need a [bold]Facebook Page Access Token[/bold],")
+            console.print("NOT an Instagram token. Tokens starting with 'IGAA' won't work.\n")
+            console.print("[cyan]Step 1:[/cyan] Prerequisites")
+            console.print("  - Instagram Business or Creator account")
+            console.print("  - Facebook Page linked to that Instagram account")
+            console.print("  - Meta Developer account (developers.facebook.com)\n")
+            console.print("[cyan]Step 2:[/cyan] Create Meta App")
+            console.print("  - Create app → Select 'Business' type")
+            console.print("  - Add product: 'Instagram Graph API'\n")
+            console.print("[cyan]Step 3:[/cyan] Get Page Access Token")
+            console.print("  - Go to Graph API Explorer (developers.facebook.com/tools/explorer)")
+            console.print("  - Select your app")
+            console.print("  - Click 'Get Token' → 'Get Page Access Token'")
+            console.print("  - Select your Facebook Page linked to Instagram")
+            console.print("  - Add permissions: instagram_basic, instagram_content_publish,")
+            console.print("    pages_read_engagement, pages_show_list")
+            console.print("  - Token should start with 'EAA...'\n")
+            console.print("[cyan]Step 4:[/cyan] Get Instagram Business Account ID")
+            console.print("  In Graph API Explorer, query: [dim]me/accounts?fields=instagram_business_account[/dim]")
+            console.print("  Copy the 'instagram_business_account.id' value\n")
+            console.print("[cyan]Step 5:[/cyan] (Optional) Get Long-Lived Token")
+            console.print("  Exchange for 60-day token via: [dim]oauth/access_token?grant_type=fb_exchange_token...[/dim]\n")
+            console.print("[cyan]Step 6:[/cyan] Configure BMCForge")
+            console.print("  [green]bmc config set instagram.access_token EAA...[/green]")
+            console.print("  [green]bmc config set instagram.user_id YOUR_IG_BUSINESS_ID[/green]\n")
+            raise typer.Exit(1)
+
+        try:
+            publisher = _get_instagram_publisher()
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console,
+            ) as progress:
+                progress.add_task("Validating Instagram credentials...", total=None)
+                publisher.authenticate()
+
+            # Show account info
+            info = publisher.get_account_info()
+            if "username" in info:
+                console.print(f"\n[bold]Connected as:[/bold] @{info['username']}")
+                if "followers_count" in info:
+                    console.print(f"[dim]Followers: {info['followers_count']:,}[/dim]")
+
+            print_success("Instagram authentication verified!")
+
+        except Exception as e:
+            print_error(f"Authentication failed: {e}")
+            # Try to debug the token
+            console.print("\n[dim]Debugging token...[/dim]")
+            try:
+                debug_info = publisher.debug_token()
+                if "error" in debug_info:
+                    console.print(f"[red]Token debug error:[/red] {debug_info['error']}")
+                    if "hint" in debug_info:
+                        console.print(f"[yellow]{debug_info['hint']}[/yellow]")
+                else:
+                    console.print(f"[dim]Token type: {debug_info.get('type', 'unknown')}[/dim]")
+                    console.print(f"[dim]Valid: {debug_info.get('is_valid', 'unknown')}[/dim]")
+                    console.print(f"[dim]Scopes: {debug_info.get('scopes', [])}[/dim]")
+            except Exception:
+                pass
+            console.print(f"\n[dim]Token prefix: {access_token[:10]}...[/dim]")
+            console.print(f"[dim]User ID: {user_id}[/dim]")
+            raise typer.Exit(1)
 
     elif plat == Platform.TIKTOK:
         console.print("\n[bold]TikTok Setup:[/bold]\n")
@@ -316,6 +409,94 @@ def upload(
             print_success(f"Video uploaded successfully!")
             console.print(f"[bold]Video ID:[/bold] {result.post_id}")
             console.print(f"[bold]URL:[/bold] {result.post_url}")
+        else:
+            # Record failed publication
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO publications (
+                        content_id, platform, status, error_message
+                    ) VALUES (?, ?, ?, ?)
+                    """,
+                    (content_id, plat.value, "failed", result.error),
+                )
+
+            print_error(f"Upload failed: {result.error}")
+            raise typer.Exit(1)
+
+    elif plat == Platform.INSTAGRAM:
+        if not _check_instagram_available():
+            print_error(
+                "Instagram publishing requires httpx.\n"
+                "Run: bmc publish setup instagram"
+            )
+            raise typer.Exit(1)
+
+        publisher = _get_instagram_publisher()
+
+        # Check authentication
+        if not publisher.is_authenticated():
+            print_error(
+                "Not authenticated with Instagram.\n"
+                "Run: bmc publish auth instagram"
+            )
+            raise typer.Exit(1)
+
+        console.print(f"\n[bold]Uploading to Instagram (Reel):[/bold]")
+        console.print(f"  Caption: {content_desc[:50]}..." if len(content_desc) > 50 else f"  Caption: {content_desc}")
+        console.print(f"  File: {video_path}")
+        if tag_list:
+            console.print(f"  Hashtags: {len(tag_list)} tags")
+        console.print()
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            progress.add_task("Uploading and processing video...", total=None)
+
+            result = publisher.upload(
+                file_path=str(video_path),
+                title=content_title,  # Not used by Instagram but required by interface
+                description=content_desc,
+                tags=tag_list,
+            )
+
+        if result.success:
+            # Record publication in database
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO publications (
+                        content_id, platform, post_id, post_url, status,
+                        published_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        content_id,
+                        plat.value,
+                        result.post_id,
+                        result.post_url,
+                        result.status.value,
+                        datetime.now().isoformat(),
+                    ),
+                )
+
+                # Update content status
+                conn.execute(
+                    """
+                    UPDATE content
+                    SET status = 'published', publish_date = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (datetime.now().date().isoformat(), content_id),
+                )
+
+            print_success("Reel published successfully!")
+            console.print(f"[bold]Media ID:[/bold] {result.post_id}")
+            if result.post_url:
+                console.print(f"[bold]URL:[/bold] {result.post_url}")
         else:
             # Record failed publication
             with get_db() as conn:
@@ -506,6 +687,17 @@ def revoke(
             print_success("YouTube authentication revoked.")
         else:
             console.print("[dim]No YouTube authentication found.[/dim]")
+
+    elif plat == Platform.INSTAGRAM:
+        if not _check_instagram_available():
+            print_error("Instagram publishing dependencies not installed.")
+            raise typer.Exit(1)
+
+        publisher = _get_instagram_publisher()
+        if publisher.revoke():
+            print_success("Instagram credentials removed.")
+        else:
+            console.print("[dim]No Instagram credentials found.[/dim]")
 
     else:
         print_error(f"Revoke not implemented for {plat.value}")
